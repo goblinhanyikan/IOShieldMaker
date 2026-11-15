@@ -9,7 +9,7 @@
 
 -WARNING: THIS APP IS VIBECODED. IF YOU ARE AVOIDING AI GENERATED CODE, YOU DESERVE TO KNOW-
 
-Access it online here : https://goblinhanyikan.github.io/GPIOShieldMaker/
+Access it online here : https://goblinhanyikan.github.io/IOShieldMaker/
 
 A single-file web app (`io-shield-designer.html`, no build step) that helps you design a 3D-printable PC I/O shield. You load a photo of your motherboard's rear I/O (or an existing shield), the app straightens it onto a plate of known size, and you place and fine-tune the port cutouts on top of it. It then exports an STL for printing.
 
@@ -89,7 +89,7 @@ Conventions: plate space is millimetres with the origin at the top-left and y po
 
 -UYARI: BU UYGULAMA ÇATIR ÇATIR YAPAY ZEKAYA YAPTIRILMIŞTIR. HERHANGİ BİR NEDENDEN DOLAYI YAPAY ZEKADAN UZAK DURMAK İSTİYORSANIZ BUNU BİLMEK HAKKINIZ.-
 
-Bu linkten online olarak kullanabilirsiniz: https://goblinhanyikan.github.io/GPIOShieldMaker/
+Bu linkten online olarak kullanabilirsiniz: https://goblinhanyikan.github.io/IOShieldMaker/
 
 Bilgisayar kasaları için 3D yazıcıyla basılabilir **I/O paneli (I/O shield)** tasarlamaya yarayan tek dosyalık bir web uygulaması (`io-shield-designer.html`, derleme gerekmez). Anakartınızın arka I/O bölgesinin (ya da mevcut bir panelin) fotoğrafını yüklersiniz; uygulama fotoğrafı bilinen ölçüdeki bir plakaya oturtur, siz de port kesimlerini üzerinde yerleştirip ince ayar yaparsınız. Sonunda baskı için STL dosyası alırsınız.
 
