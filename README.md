@@ -7,6 +7,7 @@
 <a id="english"></a>
 ## English
 
+-WARNING: THIS APP IS VIBECODED. IF YOU ARE AVOIDING AI GENERATED CODE, YOU DESERVE TO KNOW-
 A single-file web app (`io-shield-designer.html`, no build step) that helps you design a 3D-printable PC I/O shield. You load a photo of your motherboard's rear I/O (or an existing shield), the app straightens it onto a plate of known size, and you place and fine-tune the port cutouts on top of it. It then exports an STL for printing.
 
 > **Status:** not yet field-tested. Port presets are approximate. Measure your own board and case with calipers and print a quick test piece before committing to a full print.
@@ -83,6 +84,7 @@ Conventions: plate space is millimetres with the origin at the top-left and y po
 <a id="türkçe"></a>
 ## Türkçe
 
+-UYARI: BU UYGULAMA ÇATIR ÇATIR YAPAY ZEKAYA YAPTIRILMIŞTIR. HERHANGİ BİR NEDENDEN DOLAYI YAPAY ZEKADAN UZAK DURMAK İSTİYORSANIZ BUNU BİLMEK HAKKINIZ.-
 Bilgisayar kasaları için 3D yazıcıyla basılabilir **I/O paneli (I/O shield)** tasarlamaya yarayan tek dosyalık bir web uygulaması (`io-shield-designer.html`, derleme gerekmez). Anakartınızın arka I/O bölgesinin (ya da mevcut bir panelin) fotoğrafını yüklersiniz; uygulama fotoğrafı bilinen ölçüdeki bir plakaya oturtur, siz de port kesimlerini üzerinde yerleştirip ince ayar yaparsınız. Sonunda baskı için STL dosyası alırsınız.
 
 > **Durum:** henüz gerçek kullanımda denenmedi. Port ölçüleri yaklaşıktır. Kendi anakartınızı ve kasanızı kumpasla ölçün ve tam baskıdan önce küçük bir deneme parçası basın.
