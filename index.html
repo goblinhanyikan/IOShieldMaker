@@ -1,0 +1,769 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>I/O Shield Designer</title>
+<style>
+:root{color-scheme:dark;--bg:#0b0912;--card:#15111f;--ink:#f1ebff;--mute:#a79cc4;--line:#2e2547;--acc:#a855f7;--plate:#2b2340;
+  box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.4 system-ui,-apple-system,"Segoe UI",sans-serif}
+h1{font-size:18px;margin:0}h2{font-size:13px;margin:0 0 8px;text-transform:uppercase;letter-spacing:.05em;color:var(--mute)}
+.top{display:flex;gap:12px;align-items:baseline;padding:12px 12px 0}
+.app{display:grid;gap:12px;padding:12px;grid-template-columns:minmax(0,1fr)}
+@media(min-width:900px){.app{grid-template-columns:minmax(0,1fr) 340px}}
+.box{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:12px}
+.bar{display:flex;gap:8px;margin-bottom:12px}
+button,select,input{font:inherit;color:var(--ink)}
+button,.btn{padding:8px 12px;border:1px solid var(--line);border-radius:8px;background:var(--card);cursor:pointer;display:inline-block}
+button.on,.pri{background:var(--acc);border-color:var(--acc);color:#fff}
+input[type=number],select{width:100%;padding:6px;border:1px solid var(--line);border-radius:6px;background:var(--bg);box-sizing:border-box}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(70px,1fr));gap:8px}
+.grid label{font-size:12px;color:var(--mute)}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px}
+.row input[type=range]{flex:1;min-width:120px}
+.hint,.mute{color:var(--mute);font-size:13px}
+.hidden{display:none!important}
+input[type=range]{accent-color:var(--acc)}
+.zoomrow button{padding:4px 10px}
+#alignSvg{width:100%;height:auto;max-height:75vh;display:block;touch-action:none}
+#stage{position:relative;overflow:hidden;background:var(--plate);width:100%;border-radius:4px}
+#photo{position:absolute;left:0;top:0;max-width:none;transform-origin:0 0;pointer-events:none;user-select:none}
+#designSvg{position:absolute;inset:0;width:100%;height:100%;touch-action:none}
+.quad{fill:rgba(168,85,247,.15);stroke:var(--acc)}
+.hdl{fill:var(--acc);stroke:#fff;stroke-width:2;cursor:grab}
+.cut{stroke:var(--acc);cursor:move}.cut.sel{stroke:#fff}
+.grow{fill:none;stroke:#fff;stroke-dasharray:1 .6;stroke-width:.25;pointer-events:none}
+.lbl{font-size:3px;fill:#fff;stroke:#000;stroke-width:.5;paint-order:stroke;pointer-events:none}
+.guide{stroke:#67e8f9;fill:none;pointer-events:none}.gline{stroke:#f0abfc;fill:none;pointer-events:none}
+textarea{width:100%;height:80px;box-sizing:border-box;font:12px monospace;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:6px}
+</style>
+</head>
+<body>
+<header class="top"><h1>I/O Shield Designer</h1><button id="lang">TR</button></header>
+<div class="app">
+<main>
+  <div class="bar">
+    <button id="tabAlign">1 · Align photo</button>
+    <button id="tabDesign">2 · Design</button>
+  </div>
+  <div id="alignView" class="box">
+    <p class="hint" id="alignHint"></p>
+    <div class="row zoomrow"><label class="row" style="flex:1">Zoom <input id="zoom" type="range" min="1" max="10" step="0.1" value="1"></label><button id="fit">Fit</button><span class="mute">Go to corner</span><button data-c="0">1</button><button data-c="1">2</button><button data-c="2">3</button><button data-c="3">4</button></div>
+    <svg id="alignSvg"><image id="alignImg"/><g id="alignOverlay"></g></svg>
+  </div>
+  <div id="designView" class="box hidden">
+    <label class="row">Photo opacity <input id="opacity" type="range" min="0" max="1" step="0.01"><output id="opOut"></output></label>
+    <div id="stage"><img id="photo" alt=""><svg id="designSvg" preserveAspectRatio="none"></svg></div>
+    <p class="hint">Drag a port to move it, drag the round handle to resize. Arrow keys nudge (Shift = bigger steps).</p>
+  </div>
+</main>
+<aside>
+  <section class="box"><h2>Photo</h2>
+    <label class="btn pri">Upload photo<input id="file" type="file" accept="image/*" hidden></label>
+    <label class="row" style="margin-top:8px"><input id="mirror" type="checkbox"> Mirror photo (shot from inside the case)</label>
+    <label class="row"><input id="flipV" type="checkbox"> Flip vertically</label>
+    <button id="rot">Rotate 90°</button>
+  </section>
+  <section class="box"><h2>Plate (mm)</h2>
+    <div class="grid" id="plateFields"></div>
+    <p class="hint">Body = part that fits the case opening. Rim = flange around it, outside the case. Case metal = sheet thickness. Catches = snap ledges on all four sides (light purple in the preview).</p>
+  </section>
+  <section class="box"><h2>Ports</h2>
+    <div class="row"><select id="preset"></select><button id="add" class="pri">Add</button></div>
+    <p class="hint">Preset sizes are approximate. Match them to your photo.</p>
+    <div class="grid" id="fields"></div>
+    <div class="row" style="margin-top:8px"><button id="dup">Duplicate</button><button id="del">Delete</button></div>
+  </section>
+  <section class="box"><h2>Align</h2>
+    <label class="row"><input id="snapPorts" type="checkbox"> Snap to other ports (guides show; also works for diagonal neighbors)</label>
+    <div class="row"><button id="drawLine">Draw line</button><button id="clearLine">Clear line</button></div>
+    <label class="row"><input id="snapLine" type="checkbox"> Snap ports to the line</label>
+    <div class="row"><button id="lineAll">Snap all to line</button><button id="rowAll">Align all to selected row</button></div>
+    <div class="row"><button id="measure">Measure distance</button></div>
+    <p class="hint" id="measureOut"></p>
+    <p class="hint">Snapping uses port centers and edges. Ports stay axis-aligned, so a slanted line moves their centers onto it. Drag the line handles to adjust it.</p>
+  </section>
+  <section class="box"><h2>Export</h2>
+    <div class="row"><button id="stl" class="pri">Save STL</button><button id="stlZip">Save STL (zip)</button><button id="svg">Save SVG</button></div>
+    <p class="hint">Prints flange-down with the outside face on the bed, no flipping. The flange stays outside the case, the body goes through the opening, and the ledges catch behind the case metal. Clearance is added to every cutout.</p>
+    <p class="hint" id="msg"></p>
+    <div class="row"><button id="copyJson">Copy layout JSON</button><button id="loadJson">Load JSON</button></div>
+    <textarea id="io" placeholder="Layout JSON or SVG source appears here"></textarea>
+  </section>
+</aside>
+</div>
+
+<script>
+/* =====================================================================
+   I/O SHIELD DESIGNER - single file, no build step. Sections in order:
+   1 CONFIG      tweak defaults here
+   2 PRESETS     port sizes in mm (add new connectors here)
+   3 STATE       the ONLY mutable data; UI is rendered from it
+   4 GEOMETRY    homography (photo -> plate) and cutout/slab math
+   5 EXPORT      STL (binary, zipped), SVG, download wrapper
+   6 RENDER      renderAlign / renderDesign / fields
+   7 EVENTS      pointer dragging, keyboard, inputs
+   8 INIT
+   Coordinates: plate space is mm, origin top-left, y down (as seen from
+   outside the case). STL flips y so the model is not mirrored.
+   Ideas: 3MF export, plate corner radius, screw tabs, JSON save/load,
+   auto-detect ports from the photo, snapping/aligning ports to each other.
+   ===================================================================== */
+
+/* 1 CONFIG */
+const CONFIG = {
+  // w/h = body that goes through the case opening (ATX 158.75 x 44.45), thick = body depth into the case,
+  // clr = extra clearance per side on every port cutout, rim/rimT = flange outside the case (width, thickness),
+  // metal = case sheet thickness, catchH/catchL/catchN = snap ledges (height, length, count per long side)
+  plate: { w: 158.75, h: 44.45, thick: 2, clr: 0.2, rim: 3, rimT: 1.2, metal: 1, catchH: 0.5, catchL: 12, catchN: 3 },
+  snap: 0.05,        // mm grid for dragging
+  exportStep: 0.1,   // mm slab width used to build the STL (smaller = smoother curves, bigger file)
+  handlePx: 11,      // on-screen handle radius in CSS px
+  snapPx: 8,         // magnet distance for snapping, in CSS px
+  rampSteps: 3,      // snap ledges are a stepped ramp made of this many layers
+  quadInset: 0.15,   // initial corner inset in the align view
+  maxPhoto: 2000,    // photo is downscaled to this many px
+  opacity: 0.6,
+};
+
+/* 2 PRESETS (w, h, corner radius in mm) */
+const PRESETS = {
+  'USB-A (single)':     { w: 13.5, h: 6.0,  r: 0.5 },
+  'USB-A (stacked x2)': { w: 13.5, h: 15.5, r: 0.5 },
+  'USB-C':              { w: 9.2,  h: 3.6,  r: 1.8 },
+  'RJ45 (LAN)':         { w: 16,   h: 13.8, r: 0.5 },
+  'HDMI':               { w: 15,   h: 6,    r: 0.6 },
+  'DisplayPort':        { w: 17,   h: 6.6,  r: 0.6 },
+  'Audio 3.5 mm':       { w: 7.5,  h: 7.5,  r: 3.75 },
+  'PS/2':               { w: 13.5, h: 13.5, r: 6.75 },
+  'DVI':                { w: 38,   h: 13,   r: 0.8 },
+  'VGA (D-sub)':        { w: 31.5, h: 13.5, r: 0.8 },
+  'Custom rectangle':   { w: 12,   h: 8,    r: 1 },
+};
+const PLATE_FIELDS = [['w', 'Body width'], ['h', 'Body height'], ['thick', 'Body depth'], ['clr', 'Clearance'],
+  ['rim', 'Rim width'], ['rimT', 'Rim thick'], ['metal', 'Case metal'],
+  ['catchH', 'Catch height'], ['catchL', 'Catch length'], ['catchN', 'Catches/side']];
+const CUT_FIELDS = [['x', 'X'], ['y', 'Y'], ['w', 'Width'], ['h', 'Height'], ['r', 'Corner r']];
+
+/* 3 STATE */
+const state = {
+  view: 'align',
+  photo: null,            // { src, w, h } (downscaled data URL)
+  quad: [],               // 4 corners in photo px: TL, TR, BR, BL
+  mirror: false,
+  opacity: CONFIG.opacity,
+  plate: { ...CONFIG.plate },
+  cutouts: [],            // { id, name, x, y, w, h, r } in mm
+  sel: null,              // selected cutout id
+  nextId: 1,
+  snapPorts: true,        // smart guides between ports
+  snapLine: false,        // snap port centers onto the drawn line
+  drawing: false,         // line-drawing mode
+  line: null,             // { x1, y1, x2, y2 } in mm
+  guides: [],             // transient snap guides [x1, y1, x2, y2]
+  cam: { z: 1, cx: 0, cy: 0 }, // align-view zoom (z) and center (cx, cy) in photo px
+  rot: 0, flipV: false,   // photo orientation fixes: quarter turns and vertical flip (state.mirror is the horizontal flip)
+  measure: { on: false, a: null, b: null }, // measure mode: ids of the two picked ports
+  lang: /^tr/i.test(navigator.language || '') ? 'tr' : 'en',
+};
+const $ = s => document.querySelector(s);
+const selected = () => state.cutouts.find(c => c.id === state.sel);
+const snap = v => Math.round(v / CONFIG.snap) * CONFIG.snap;
+const fmt = v => +(+v).toFixed(2);
+const toast = s => { $('#msg').textContent = t(s); };
+
+/* i18n: strings are looked up by their English text. To add a language: add another map, extend t() and the toggle in setLang(). */
+const TR = {
+  'I/O Shield Designer': 'I/O Paneli Tasarımcısı',
+  '1 · Align photo': '1 · Fotoğrafı hizala', '2 · Design': '2 · Tasarım',
+  'Zoom': 'Yakınlaştır', 'Fit': 'Sığdır', 'Go to corner': 'Köşeye git',
+  'Upload a photo of the motherboard rear I/O (or an existing shield), shot as straight-on as you can.': 'Anakartın arka I/O bölgesinin (ya da mevcut bir panelin) mümkün olduğunca karşıdan çekilmiş fotoğrafını yükleyin.',
+  'Drag the numbered corners onto the corners of the shield or I/O area, in order: 1 top-left, 2 top-right, 3 bottom-right, 4 bottom-left. That area becomes the plate. Zoom in for fine placement.': 'Numaralı köşeleri panelin ya da I/O alanının köşelerine sürükleyin: 1 sol üst, 2 sağ üst, 3 sağ alt, 4 sol alt. Bu alan plaka olur. Hassas yerleştirme için yakınlaştırın.',
+  'Photo opacity': 'Fotoğraf saydamlığı',
+  'Drag a port to move it, drag the round handle to resize. Arrow keys nudge (Shift = bigger steps).': 'Bir portu taşımak için sürükleyin, boyutlandırmak için yuvarlak tutamacı sürükleyin. Ok tuşları ince kaydırır (Shift = büyük adım).',
+  'Photo': 'Fotoğraf', 'Upload photo': 'Fotoğraf yükle',
+  'Mirror photo (shot from inside the case)': 'Fotoğrafı aynala (kasanın içinden çekildiyse)',
+  'Flip vertically': 'Dikey çevir', 'Rotate 90°': '90° döndür',
+  'Plate (mm)': 'Plaka (mm)',
+  'Body width': 'Gövde genişliği', 'Body height': 'Gövde yüksekliği', 'Body depth': 'Gövde derinliği', 'Clearance': 'Boşluk payı',
+  'Rim width': 'Kenar genişliği', 'Rim thick': 'Kenar kalınlığı', 'Case metal': 'Kasa sacı',
+  'Catch height': 'Kanca yüksekliği', 'Catch length': 'Kanca uzunluğu', 'Catches/side': 'Kanca/kenar',
+  'Body = part that fits the case opening. Rim = flange around it, outside the case. Case metal = sheet thickness. Catches = snap ledges on all four sides (light purple in the preview).': 'Gövde = kasa açıklığına giren parça. Kenar = gövdenin etrafındaki, kasanın dışında kalan flanş. Kasa sacı = sac kalınlığı. Kancalar = dört kenardaki geçmeli çıkıntılar (önizlemede açık mor).',
+  'Ports': 'Portlar', 'Add': 'Ekle', 'Preset sizes are approximate. Match them to your photo.': 'Hazır ölçüler yaklaşıktır. Fotoğrafınıza göre ayarlayın.',
+  'Duplicate': 'Çoğalt', 'Delete': 'Sil', 'Width': 'Genişlik', 'Height': 'Yükseklik', 'Corner r': 'Köşe yarıçapı',
+  'USB-A (single)': 'USB-A (tekli)', 'USB-A (stacked x2)': 'USB-A (ikili)', 'Audio 3.5 mm': 'Ses 3,5 mm', 'Custom rectangle': 'Özel dikdörtgen',
+  'Align': 'Hizala',
+  'Snap to other ports (guides show; also works for diagonal neighbors)': 'Diğer portlara yapış (kılavuzlar görünür; çapraz komşularda da çalışır)',
+  'Draw line': 'Çizgi çiz', 'Clear line': 'Çizgiyi sil', 'Snap ports to the line': 'Portları çizgiye yapıştır',
+  'Snap all to line': 'Hepsini çizgiye yapıştır', 'Align all to selected row': 'Hepsini seçili sıraya hizala',
+  'Measure distance': 'Mesafe ölç', 'Tap the first port.': 'İlk portu seçin.', 'Tap the second port.': 'İkinci portu seçin.',
+  'Center to center': 'Merkezden merkeze', 'Edge to edge': 'Kenardan kenara', 'overlap': 'çakışma',
+  'Snapping uses port centers and edges. Ports stay axis-aligned, so a slanted line moves their centers onto it. Drag the line handles to adjust it.': 'Yapışma, port merkezlerini ve kenarlarını kullanır. Portlar eksenlere paralel kalır; eğik bir çizgi yalnızca merkezlerini çizgiye taşır. Çizgiyi ayarlamak için uç tutamaçlarını sürükleyin.',
+  'Export': 'Dışa aktar', 'Save STL': 'STL kaydet', 'Save STL (zip)': 'STL kaydet (zip)', 'Save SVG': 'SVG kaydet',
+  'Prints flange-down with the outside face on the bed, no flipping. The flange stays outside the case, the body goes through the opening, and the ledges catch behind the case metal. Clearance is added to every cutout.': 'Flanş aşağıda, dış yüz tablaya bakacak şekilde basılır; çevirmeye gerek yok. Flanş kasanın dışında kalır, gövde açıklıktan geçer, kancalar kasa sacının arkasına takılır. Boşluk payı her kesime eklenir.',
+  'Copy layout JSON': 'Yerleşimi JSON kopyala', 'Load JSON': 'JSON yükle',
+  'Layout JSON or SVG source appears here': 'Yerleşim JSON verisi veya SVG kaynağı burada görünür',
+  'Drag on the plate to draw the line.': 'Çizgiyi çizmek için plaka üzerinde sürükleyin.',
+  'Select a port first.': 'Önce bir port seçin.', 'Layout JSON copied.': 'Yerleşim JSON verisi kopyalandı.',
+  'Select the text below and copy it.': 'Aşağıdaki metni seçip kopyalayın.', 'Layout loaded.': 'Yerleşim yüklendi.',
+  'Could not read that JSON.': 'JSON okunamadı.', 'Add at least one port first.': 'Önce en az bir port ekleyin.',
+  'Building STL...': 'STL oluşturuluyor...', 'Saved': 'Kaydedildi',
+  'This viewer cannot save .stl files directly. A plain download was tried; if no file appeared, use Save STL (zip).': 'Bu görünüm .stl dosyalarını doğrudan kaydedemiyor. Düz indirme denendi; dosya görünmediyse STL kaydet (zip) düğmesini kullanın.',
+  'No save dialog in this view. If no file appeared, open the artifact in a full browser tab, or use Copy layout JSON.': 'Bu görünümde kaydetme penceresi yok. Dosya görünmediyse sayfayı tam bir tarayıcı sekmesinde açın ya da Yerleşimi JSON kopyala düğmesini kullanın.',
+};
+const t = s => (state.lang === 'tr' && TR[s]) || s;
+
+/* 4 GEOMETRY */
+// Solve 3x3 homography mapping 4 src points to 4 dst points. Returns [h0..h7] (h8 = 1).
+function solveHomography(src, dst) {
+  const A = [];
+  src.forEach(([x, y], i) => {
+    const [X, Y] = dst[i];
+    A.push([x, y, 1, 0, 0, 0, -X * x, -X * y, X]);
+    A.push([0, 0, 0, x, y, 1, -Y * x, -Y * y, Y]);
+  });
+  for (let c = 0; c < 8; c++) {
+    let p = c;
+    for (let r = c + 1; r < 8; r++) if (Math.abs(A[r][c]) > Math.abs(A[p][c])) p = r;
+    [A[c], A[p]] = [A[p], A[c]];
+    for (let r = 0; r < 8; r++) {
+      if (r === c) continue;
+      const f = A[r][c] / A[c][c];
+      for (let k = c; k < 9; k++) A[r][k] -= f * A[c][k];
+    }
+  }
+  return A.map((row, i) => row[8] / row[i]);
+}
+// CSS matrix3d (column-major) from homography, so the <img> can be warped by the browser.
+const toMatrix3d = h => `matrix3d(${h[0]},${h[3]},0,${h[6]},${h[1]},${h[4]},0,${h[7]},0,0,1,0,${h[2]},${h[5]},0,1)`;
+
+// Vertical extent [top,bottom] of one cutout (rounded rect + clearance) at column x; null if x is outside.
+function holeSpan(q, x) {
+  const g = state.plate.clr, L = q.x - g, R = q.x + q.w + g, T = q.y - g, B = q.y + q.h + g;
+  const r = Math.min(q.r + g, (R - L) / 2, (B - T) / 2);
+  if (x <= L || x >= R) return null;
+  const d = x < L + r ? L + r - x : x > R - r ? x - (R - r) : 0;
+  const inset = r - Math.sqrt(Math.max(0, r * r - d * d));
+  return [T + inset, B - inset];
+}
+// Merge overlapping or touching [a, b] intervals into a sorted, disjoint list.
+function unite(iv) {
+  const out = [];
+  for (const [a, b] of [...iv].sort((p, q) => p[0] - q[0])) {
+    const last = out[out.length - 1];
+    if (last && a <= last[1] + 1e-9) last[1] = Math.max(last[1], b); else out.push([a, b]);
+  }
+  return out;
+}
+// Cut-out y-intervals of all ports at column x.
+const holesAt = x => unite(state.cutouts.map(q => holeSpan(q, x)).filter(Boolean));
+// Interval list A minus interval list B (both sorted, disjoint).
+function minus(A, B) {
+  const out = [];
+  for (let [a, b] of A) {
+    for (const [c, d] of B) {
+      if (d <= a || c >= b) continue;
+      if (c > a) out.push([a, c]);
+      a = Math.max(a, d);
+      if (a >= b) break;
+    }
+    if (a < b) out.push([a, b]);
+  }
+  return out;
+}
+
+// Alignment helpers
+const marginMm = () => Math.max(0, state.plate.rim || 0, state.plate.catchH || 0); // preview margin around the body
+const mmPerPx = () => (state.plate.w + 2 * marginMm()) / ($('#stage').clientWidth || 1);
+const center = q => [q.x + q.w / 2, q.y + q.h / 2];
+function projectOnLine([px, py]) { // closest point on the (infinite) guide line
+  const { x1, y1, x2, y2 } = state.line, dx = x2 - x1, dy = y2 - y1;
+  const t = ((px - x1) * dx + (py - y1) * dy) / ((dx * dx + dy * dy) || 1);
+  return [x1 + t * dx, y1 + t * dy];
+}
+function moveCenterTo(q, [cx, cy]) { q.x = fmt(cx - q.w / 2); q.y = fmt(cy - q.h / 2); }
+// Snap a dragged port to the guide line first, else to other ports' edges/centers. Fills state.guides.
+function snapPosition(q, x, y) {
+  const tol = CONFIG.snapPx * mmPerPx(), { w: W, h: H } = state.plate;
+  state.guides = [];
+  if (state.snapLine && state.line) {
+    const c = [x + q.w / 2, y + q.h / 2], pr = projectOnLine(c);
+    if (Math.hypot(pr[0] - c[0], pr[1] - c[1]) <= tol) return { x: pr[0] - q.w / 2, y: pr[1] - q.h / 2 };
+  }
+  if (state.snapPorts) {
+    const best = (mine, theirs) => {
+      let b = null;
+      for (const a of mine) for (const t of theirs) if (Math.abs(t - a) <= tol && (!b || Math.abs(t - a) < Math.abs(b.d))) b = { d: t - a, at: t };
+      return b;
+    };
+    const others = state.cutouts.filter(o => o.id !== q.id);
+    const bx = best([x, x + q.w / 2, x + q.w], others.flatMap(o => [o.x, o.x + o.w / 2, o.x + o.w]));
+    const by = best([y, y + q.h / 2, y + q.h], others.flatMap(o => [o.y, o.y + o.h / 2, o.y + o.h]));
+    if (bx) { x += bx.d; state.guides.push([bx.at, 0, bx.at, H]); }
+    if (by) { y += by.d; state.guides.push([0, by.at, W, by.at]); }
+  }
+  return { x, y };
+}
+
+// Layers of the printed part. z = 0 is the OUTSIDE face of the flange (lies on the print bed); z grows into the case.
+// Each layer is a z-band whose footprint is a union of rectangles [x0, x1, y0, y1] in plate mm (port cutouts are subtracted later).
+function buildLayers() {
+  const { w: W, h: H, thick: T, rim, rimT, metal, catchH, catchN } = state.plate, body = [0, W, 0, H], layers = [];
+  let z = 0;
+  if (rim > 0 && rimT > 0) { layers.push({ z0: 0, z1: rimT, rects: [[-rim, W + rim, -rim, H + rim]] }); z = rimT; } // flange (inset area)
+  const neck = Math.min(T, Math.max(0, metal)); // plain body where the case metal sits
+  if (neck > 0) layers.push({ z0: z, z1: z + neck, rects: [body] });
+  const rest = T - neck, snaps = catchH > 0 && catchN >= 1, n = snaps ? CONFIG.rampSteps : 1;
+  for (let k = 0; rest > 0 && k < n; k++) { // snap ledges: full height next to the case metal, stepping down toward the tip
+    layers.push({ z0: z + neck + rest * k / n, z1: z + neck + rest * (k + 1) / n, rects: [body, ...catchRects(snaps ? catchH * (1 - k / n) : 0)] });
+  }
+  return layers;
+}
+// Snap ledges: catchN along each long side, one on each short side. h = how far they stick out of the body.
+function catchRects(h) {
+  const { w: W, h: H, catchL, catchN } = state.plate, n = Math.round(catchN), out = [];
+  if (!(h > 0) || n < 1) return out;
+  const Ll = Math.min(catchL, W / n * 0.8), Ls = Math.min(catchL, H * 0.6);
+  for (let j = 0; j < n; j++) { const c = W * (j + 0.5) / n; out.push([c - Ll / 2, c + Ll / 2, -h, 0], [c - Ll / 2, c + Ll / 2, H, H + h]); }
+  out.push([-h, 0, H / 2 - Ls / 2, H / 2 + Ls / 2], [W, W + h, H / 2 - Ls / 2, H / 2 + Ls / 2]);
+  return out;
+}
+
+/* 5 EXPORT */
+// Binary STL: plate is cut into thin vertical slabs; each slab is extruded. Curves are stair-stepped at exportStep.
+function buildStl() {
+  const layers = buildLayers(), rects = layers.flatMap(l => l.rects), step = CONFIG.exportStep;
+  const xmin = Math.min(...rects.map(r => r[0])), xmax = Math.max(...rects.map(r => r[1])), ymin = Math.min(...rects.map(r => r[2]));
+  const cuts = new Set([xmin, xmax, ...rects.flatMap(r => [r[0], r[1]])]); // slab edges: regular grid + every rectangle edge
+  for (let x = xmin; x < xmax; x += step) cuts.add(+x.toFixed(6));
+  const xs = [...cuts].sort((a, b) => a - b).filter((v, i, a) => !i || v - a[i - 1] > 1e-6), n = xs.length - 1;
+  const slabs = layers.map(L => Array.from({ length: n }, (_, i) => { // per layer, per slab: solid y-intervals
+    const x = (xs[i] + xs[i + 1]) / 2;
+    return minus(unite(L.rects.filter(r => x > r[0] && x < r[1]).map(r => [r[2], r[3]])), holesAt(x)).filter(([a, b]) => b - a > 1e-6);
+  }));
+  const tris = [];
+  const P = (x, y, z) => [x - xmin, y - ymin, z]; // z = depth into the case; z = 0 is the outside face on the print bed
+  const face = (pts, nx, ny, nz) => { // quad; winding is fixed to match the outward normal
+    const [a, b, c, d] = pts;
+    const u = [b[0] - a[0], b[1] - a[1], b[2] - a[2]], v = [c[0] - a[0], c[1] - a[1], c[2] - a[2]];
+    const dot = (u[1] * v[2] - u[2] * v[1]) * nx + (u[2] * v[0] - u[0] * v[2]) * ny + (u[0] * v[1] - u[1] * v[0]) * nz;
+    const q = dot < 0 ? [a, d, c, b] : pts;
+    tris.push([q[0], q[1], q[2]], [q[0], q[2], q[3]]);
+  };
+  const near = (a, b) => Math.abs(a - b) < 1e-9;
+  layers.forEach((L, li) => {
+    const S = slabs[li], z0 = L.z0, z1 = L.z1;
+    const under = layers.filter(o => near(o.z1, z0)).map(o => slabs[layers.indexOf(o)]); // layers directly below / above
+    const over = layers.filter(o => near(o.z0, z1)).map(o => slabs[layers.indexOf(o)]);
+    for (let i = 0; i <= n; i++) {
+      const x = xs[i], prev = S[i - 1] || [], cur = S[i] || [];
+      if (i < n) {
+        const x1 = xs[i + 1], cover = list => unite(list.flatMap(s => s[i]));
+        for (const [a, b] of minus(cur, cover(over))) face([P(x, a, z1), P(x1, a, z1), P(x1, b, z1), P(x, b, z1)], 0, 0, 1);   // top (only where nothing sits on it)
+        for (const [a, b] of minus(cur, cover(under))) face([P(x, a, z0), P(x1, a, z0), P(x1, b, z0), P(x, b, z0)], 0, 0, -1); // bottom
+        for (const [a, b] of cur) {
+          face([P(x, a, z0), P(x1, a, z0), P(x1, a, z1), P(x, a, z1)], 0, -1, 0); // wall at the smaller y
+          face([P(x, b, z0), P(x1, b, z0), P(x1, b, z1), P(x, b, z1)], 0, 1, 0);  // wall at the larger y
+        }
+      }
+      for (const [a, b] of minus(cur, prev)) face([P(x, a, z0), P(x, b, z0), P(x, b, z1), P(x, a, z1)], -1, 0, 0);
+      for (const [a, b] of minus(prev, cur)) face([P(x, a, z0), P(x, b, z0), P(x, b, z1), P(x, a, z1)], 1, 0, 0);
+    }
+  });
+  const buf = new ArrayBuffer(84 + tris.length * 50), dv = new DataView(buf);
+  dv.setUint32(80, tris.length, true);
+  let o = 84;
+  for (const t of tris) {
+    const u = [t[1][0] - t[0][0], t[1][1] - t[0][1], t[1][2] - t[0][2]], v = [t[2][0] - t[0][0], t[2][1] - t[0][1], t[2][2] - t[0][2]];
+    const nv = [u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0]], l = Math.hypot(...nv) || 1;
+    [nv[0] / l, nv[1] / l, nv[2] / l, ...t[0], ...t[1], ...t[2]].forEach(f => { dv.setFloat32(o, f, true); o += 4; });
+    o += 2;
+  }
+  return new Uint8Array(buf);
+}
+
+const CRC_TABLE = Array.from({ length: 256 }, (_, n) => { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; return c >>> 0; });
+const crc32 = u8 => { let c = 0xFFFFFFFF; for (const b of u8) c = CRC_TABLE[(c ^ b) & 255] ^ (c >>> 8); return (c ^ 0xFFFFFFFF) >>> 0; };
+// Minimal single-file ZIP (stored, no compression). Needed because the download API does not accept .stl.
+function zipStore(name, data) {
+  const nm = new TextEncoder().encode(name), crc = crc32(data), L = 30 + nm.length, C = 46 + nm.length;
+  const u8 = new Uint8Array(L + data.length + C + 22), dv = new DataView(u8.buffer);
+  let o = 0;
+  const w16 = v => { dv.setUint16(o, v, true); o += 2; }, w32 = v => { dv.setUint32(o, v >>> 0, true); o += 4; };
+  w32(0x04034b50); w16(20); w16(0); w16(0); w16(0); w16(0x21); w32(crc); w32(data.length); w32(data.length); w16(nm.length); w16(0);
+  u8.set(nm, o); o += nm.length; u8.set(data, o); o += data.length;
+  const cd = o;
+  w32(0x02014b50); w16(20); w16(20); w16(0); w16(0); w16(0); w16(0x21); w32(crc); w32(data.length); w32(data.length);
+  w16(nm.length); w16(0); w16(0); w16(0); w16(0); w32(0); w32(0);
+  u8.set(nm, o); o += nm.length;
+  w32(0x06054b50); w16(0); w16(0); w16(1); w16(1); w32(C); w32(cd); w16(0);
+  return u8;
+}
+function buildSvg() {
+  const { w, h, clr: g } = state.plate;
+  const holes = state.cutouts.map(q => `<rect x="${fmt(q.x - g)}" y="${fmt(q.y - g)}" width="${fmt(q.w + 2 * g)}" height="${fmt(q.h + 2 * g)}" rx="${fmt(q.r + g)}"/>`).join('');
+  const r = Math.max(0, state.plate.rim || 0), flange = r > 0 ? `<rect x="${-r}" y="${-r}" width="${w + 2 * r}" height="${h + 2 * r}" stroke="#888"/>` : '';
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${w + 2 * r}mm" height="${h + 2 * r}mm" viewBox="${-r} ${-r} ${w + 2 * r} ${h + 2 * r}"><g fill="none" stroke="#000" stroke-width="0.1">${flange}<rect width="${w}" height="${h}"/>${holes}</g></svg>`;
+}
+// The published page can only save files through the downloads capability (may be absent).
+async function saveFile(filename, data, fallbackText) {
+  let dl = null;
+  try { dl = window.claude ? await window.claude.use('downloads') : null; } catch (e) { dl = null; }
+  let msg = 'No save dialog in this view. If no file appeared, open the artifact in a full browser tab, or use Copy layout JSON.';
+  if (dl) {
+    try { await dl.save({ filename, data }); return toast(t('Saved') + ' ' + filename); }
+    catch (e) {
+      if (e.code === 'declined') return;
+      if (e.code === 'rejected_extension') msg = 'This viewer cannot save .stl files directly. A plain download was tried; if no file appeared, use Save STL (zip).';
+    }
+  }
+  // Fallback: plain browser download. Works only when the page is opened outside the sandbox.
+  try {
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([data])); a.download = filename;
+    document.body.appendChild(a); a.click(); a.remove();
+  } catch (e) { /* ignore */ }
+  toast(msg);
+  if (fallbackText) $('#io').value = fallbackText;
+}
+
+/* 6 RENDER */
+function setView(v) {
+  state.view = v; if (v !== 'design') state.drawing = false;
+  $('#alignView').classList.toggle('hidden', v !== 'align');
+  $('#designView').classList.toggle('hidden', v !== 'design');
+  $('#tabAlign').classList.toggle('on', v === 'align');
+  $('#tabDesign').classList.toggle('on', v === 'design');
+  render();
+}
+function render() { state.view === 'align' ? renderAlign() : renderDesign(); }
+
+// Align-view camera: z = zoom, (cx, cy) = view center in photo px. Returns the clamped viewBox [x, y, w, h].
+function camBox() {
+  const ph = state.photo, c = state.cam, vw = ph.w / c.z, vh = ph.h / c.z;
+  const x = Math.min(ph.w - vw, Math.max(0, c.cx - vw / 2)), y = Math.min(ph.h - vh, Math.max(0, c.cy - vh / 2));
+  c.cx = x + vw / 2; c.cy = y + vh / 2;
+  return [x, y, vw, vh];
+}
+function zoomAt(z, ax, ay) { // zoom to z while keeping photo point (ax, ay) fixed on screen
+  const c = state.cam, k = c.z / z;
+  c.cx = ax - (ax - c.cx) * k; c.cy = ay - (ay - c.cy) * k; c.z = z;
+  renderAlign();
+}
+function renderAlign() {
+  const svg = $('#alignSvg'), ph = state.photo;
+  $('#alignHint').textContent = t(ph
+    ? 'Drag the numbered corners onto the corners of the shield or I/O area, in order: 1 top-left, 2 top-right, 3 bottom-right, 4 bottom-left. That area becomes the plate. Zoom in for fine placement.'
+    : 'Upload a photo of the motherboard rear I/O (or an existing shield), shot as straight-on as you can.');
+  svg.style.display = ph ? 'block' : 'none';
+  if (!ph) return;
+  const [vx, vy, vw, vh] = camBox();
+  svg.setAttribute('viewBox', `${vx} ${vy} ${vw} ${vh}`);
+  $('#zoom').value = state.cam.z;
+  const r = CONFIG.handlePx * vw / (svg.clientWidth || vw);
+  $('#alignOverlay').innerHTML =
+    `<polygon class="quad" style="stroke-width:${r / 5}" points="${state.quad.map(p => p.join(',')).join(' ')}"/>` +
+    state.quad.map((p, i) => `<circle class="hdl" data-role="corner" data-id="${i}" cx="${p[0]}" cy="${p[1]}" r="${r}"/>` +
+      `<text x="${p[0]}" y="${p[1] + r * .35}" font-size="${r}" text-anchor="middle" fill="#fff" pointer-events="none">${i + 1}</text>`).join('');
+}
+
+function renderDesign() {
+  const { w: W, h: H, clr } = state.plate, stage = $('#stage'), photo = $('#photo'), svg = $('#designSvg');
+  const m = marginMm(), VW = W + 2 * m, VH = H + 2 * m; // the stage shows the body plus the rim around it
+  stage.style.aspectRatio = `${VW} / ${VH}`;
+  const Wp = stage.clientWidth, ppm = Wp / VW, u = 1 / (ppm || 1); // ppm = px per mm, u = mm per screen px
+  const px0 = m * ppm, py0 = m * ppm, px1 = (m + W) * ppm, py1 = (m + H) * ppm; // body rectangle in stage px
+  if (state.photo && Wp) {
+    let c = [[px0, py0], [px1, py0], [px1, py1], [px0, py1]]; // plate corners TL, TR, BR, BL
+    if (state.mirror) c = [c[1], c[0], c[3], c[2]];             // horizontal mirror
+    if (state.flipV) c = [c[3], c[2], c[1], c[0]];              // vertical flip
+    const dst = c.map((_, i) => c[(i + state.rot) % 4]);        // quarter turns: photo corner i lands on plate corner i + rot
+    const m = solveHomography(state.quad, dst);
+    if (m.every(Number.isFinite)) {
+      photo.style.display = 'block';
+      photo.style.width = state.photo.w + 'px'; photo.style.height = state.photo.h + 'px';
+      photo.style.transform = toMatrix3d(m);
+      photo.style.opacity = state.opacity;
+    }
+  } else photo.style.display = 'none';
+  svg.setAttribute('viewBox', `${-m} ${-m} ${VW} ${VH}`);
+  renderMeasureOut();
+  const fillA = 0.12 + 0.7 * (1 - state.opacity); // holes look solid when the photo is faded out
+  svg.innerHTML = rimSvg(u) + state.cutouts.map(q => {
+    const s = q.id === state.sel;
+    return `<rect class="cut${s ? ' sel' : ''}" data-role="cut" data-id="${q.id}" x="${q.x}" y="${q.y}" width="${q.w}" height="${q.h}" rx="${q.r}" fill="rgba(20,20,30,${fillA})" stroke-width="${(s ? 2 : 1) * u}"/>` +
+      (clr > 0 ? `<rect class="grow" x="${q.x - clr}" y="${q.y - clr}" width="${q.w + 2 * clr}" height="${q.h + 2 * clr}" rx="${q.r + clr}"/>` : '') +
+      `<text class="lbl" style="font-size:${9 * u}px" x="${q.x + q.w / 2}" y="${q.y + q.h / 2}" text-anchor="middle" dominant-baseline="middle">${t(q.name)}</text>` +
+      (s ? `<circle class="hdl" data-role="resize" data-id="${q.id}" cx="${q.x + q.w}" cy="${q.y + q.h}" r="${CONFIG.handlePx * u}" stroke-width="${u}"/>` : '');
+  }).join('') + overlaySvg(u);
+}
+
+const measureAB = () => ({ a: state.cutouts.find(c => c.id === state.measure.a), b: state.cutouts.find(c => c.id === state.measure.b) });
+function pickMeasure(id) { // tap 1 = first port, tap 2 = second port, tap 3 starts over
+  const m = state.measure;
+  if (m.a === null || m.b !== null) { m.a = id; m.b = null; } else if (id !== m.a) m.b = id;
+  renderDesign();
+}
+function measureSvg(u) { // outlines of the two picked ports + dimension lines (center to center, X then Y)
+  const { a, b } = measureAB();
+  let s = [a, b].filter(Boolean).map(q => `<rect pointer-events="none" x="${q.x}" y="${q.y}" width="${q.w}" height="${q.h}" rx="${q.r}" fill="none" stroke="#facc15" stroke-width="${2 * u}"/>`).join('');
+  if (!a || !b) return s;
+  const [ax, ay] = center(a), [bx, by] = center(b);
+  const dim = (x1, y1, x2, y2, v, tx, ty) => `<line pointer-events="none" x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="#facc15" stroke-width="${1.5 * u}"/><text class="lbl" style="font-size:${11 * u}px" x="${tx}" y="${ty}" text-anchor="middle">${fmt(v)}</text>`;
+  s += dim(ax, ay, bx, ay, Math.abs(bx - ax), (ax + bx) / 2, ay - 6 * u);
+  s += dim(bx, ay, bx, by, Math.abs(by - ay), bx + 16 * u, (ay + by) / 2);
+  return s;
+}
+function renderMeasureOut() { // readout in the Align panel: center distances and edge gaps
+  const { a, b } = measureAB(), el = $('#measureOut');
+  if (!state.measure.on) { el.textContent = ''; return; }
+  if (!a || !b) { el.textContent = t(a ? 'Tap the second port.' : 'Tap the first port.'); return; }
+  const gap = (a0, al, b0, bl) => Math.max(a0, b0) - Math.min(a0 + al, b0 + bl); // negative = overlap
+  const g = v => v >= 0 ? fmt(v) : t('overlap') + ' ' + fmt(-v);
+  const [ax, ay] = center(a), [bx, by] = center(b);
+  el.innerHTML = `${t('Center to center')}: X ${fmt(Math.abs(bx - ax))} · Y ${fmt(Math.abs(by - ay))} mm<br>${t('Edge to edge')}: X ${g(gap(a.x, a.w, b.x, b.w))} · Y ${g(gap(a.y, a.h, b.y, b.h))} mm`;
+}
+
+function rimSvg(u) { // preview of the flange band, body outline and snap ledges (not clickable)
+  const { w: W, h: H, rim } = state.plate;
+  let s = '';
+  if (rim > 0) s += `<path pointer-events="none" fill="rgba(0,0,0,.18)" fill-rule="evenodd" d="M${-rim} ${-rim}H${W + rim}V${H + rim}H${-rim}ZM0 0H${W}V${H}H0Z"/>`;
+  s += catchRects(state.plate.catchH).map(r => `<rect pointer-events="none" x="${r[0]}" y="${r[2]}" width="${r[1] - r[0]}" height="${r[3] - r[2]}" fill="#d8b4fe"/>`).join('');
+  return s + `<rect pointer-events="none" x="0" y="0" width="${W}" height="${H}" fill="none" stroke="#fff" stroke-width="${u}"/>`;
+}
+
+function overlaySvg(u) { // user-drawn guide line + transient snap guides (u = mm per screen px)
+  let s = measureSvg(u) + state.guides.map(g => `<line class="guide" x1="${g[0]}" y1="${g[1]}" x2="${g[2]}" y2="${g[3]}" stroke-width="${u}" stroke-dasharray="${4 * u} ${3 * u}"/>`).join('');
+  const L = state.line;
+  if (L) {
+    const dx = L.x2 - L.x1, dy = L.y2 - L.y1, k = 1000 / (Math.hypot(dx, dy) || 1);
+    s += `<line class="gline" x1="${L.x1 - dx * k}" y1="${L.y1 - dy * k}" x2="${L.x2 + dx * k}" y2="${L.y2 + dy * k}" stroke-width="${1.5 * u}" stroke-dasharray="${6 * u} ${4 * u}"/>`;
+    s += [[L.x1, L.y1], [L.x2, L.y2]].map((p, i) => `<circle class="hdl" data-role="lineEnd" data-id="${i}" cx="${p[0]}" cy="${p[1]}" r="${CONFIG.handlePx * u * .8}" stroke-width="${u}"/>`).join('');
+  }
+  return s;
+}
+
+function buildFields(el, defs, key) { // number inputs; data-k = property name, data-t = which object
+  el.innerHTML = defs.map(([k, label]) => `<label>${t(label)}<input type="number" step="0.05" data-t="${key}" data-k="${k}"></label>`).join('');
+}
+function syncFields() { // copy state into the inputs (skips the one being typed in)
+  const q = selected();
+  document.querySelectorAll('input[data-k]').forEach(i => {
+    if (i === document.activeElement) return;
+    const src = i.dataset.t === 'plate' ? state.plate : q;
+    i.value = src ? fmt(src[i.dataset.k]) : '';
+    if (i.dataset.t === 'cut') i.disabled = !q;
+  });
+}
+
+/* 7 EVENTS */
+let drag = null;
+function svgPoint(svg, e) { return new DOMPoint(e.clientX, e.clientY).matrixTransform(svg.getScreenCTM().inverse()); }
+// onBlank(p) runs on empty space (or any press in line-drawing mode); return true to start a 'newline' drag.
+function bindDrag(svg, onDown, onMove, onBlank, onUp) {
+  svg.addEventListener('pointerdown', e => {
+    const t = e.target.dataset, p = svgPoint(svg, e);
+    if (onBlank && (!t.role || state.drawing)) {
+      const role = onBlank(p); // returns a drag role ('newline', 'pan') or a falsy value
+      if (role) { drag = { svg, role, id: 0, p0: p }; svg.setPointerCapture(e.pointerId); e.preventDefault(); }
+      return;
+    }
+    if (!t.role) return;
+    drag = { svg, role: t.role, id: +t.id, p0: p };
+    onDown(drag);
+    svg.setPointerCapture(e.pointerId);
+    e.preventDefault();
+  });
+  svg.addEventListener('pointermove', e => { if (drag && drag.svg === svg) onMove(drag, svgPoint(svg, e)); });
+  const up = () => { if (!drag || drag.svg !== svg) return; if (onUp) onUp(); drag = null; };
+  svg.addEventListener('pointerup', up); svg.addEventListener('pointercancel', up);
+}
+function select(id) { state.sel = id; syncFields(); renderDesign(); }
+
+bindDrag($('#alignSvg'), () => {}, (d, p) => {
+  if (d.role === 'pan') { state.cam.cx += d.p0.x - p.x; state.cam.cy += d.p0.y - p.y; return renderAlign(); }
+  const { w, h } = state.photo;
+  state.quad[d.id] = [Math.min(w, Math.max(0, Math.round(p.x))), Math.min(h, Math.max(0, Math.round(p.y)))];
+  renderAlign();
+}, () => 'pan'); // pressing empty photo space pans the zoomed view
+bindDrag($('#designSvg'), d => {
+  if (d.role !== 'cut' && d.role !== 'resize') return;
+  if (state.measure.on) { pickMeasure(d.id); return; }
+  const q = state.cutouts.find(c => c.id === d.id);
+  d.ox = d.p0.x - q.x; d.oy = d.p0.y - q.y;
+  if (state.sel !== d.id) select(d.id);
+}, (d, p) => {
+  if (d.role === 'newline') { state.line.x2 = p.x; state.line.y2 = p.y; return renderDesign(); }
+  if (d.role === 'lineEnd') { const k = d.id + 1; state.line['x' + k] = p.x; state.line['y' + k] = p.y; return renderDesign(); }
+  if (state.measure.on) return; // measure mode never moves ports
+  const q = state.cutouts.find(c => c.id === d.id);
+  if (d.role === 'cut') { const s = snapPosition(q, snap(p.x - d.ox), snap(p.y - d.oy)); q.x = fmt(s.x); q.y = fmt(s.y); }
+  else { q.w = Math.max(0.5, snap(p.x - q.x)); q.h = Math.max(0.5, snap(p.y - q.y)); q.r = Math.min(q.r, q.w / 2, q.h / 2); }
+  syncFields(); renderDesign();
+}, p => { // blank press: start a line in drawing mode, otherwise deselect
+  if (state.drawing) { state.line = { x1: p.x, y1: p.y, x2: p.x, y2: p.y }; return 'newline'; }
+  if (state.sel !== null) select(null);
+  return false;
+}, () => { // pointer released
+  if (drag.role === 'newline') {
+    const L = state.line; state.drawing = false;
+    if (Math.hypot(L.x2 - L.x1, L.y2 - L.y1) < 1) state.line = null; else state.snapLine = true;
+    syncAlignUi(); toast('');
+  }
+  state.guides = []; renderDesign();
+});
+
+document.addEventListener('input', e => { // numeric fields (plate + selected cutout)
+  const i = e.target, k = i.dataset && i.dataset.k;
+  if (!k || i.value === '' || !Number.isFinite(+i.value)) return;
+  (i.dataset.t === 'plate' ? state.plate : selected())[k] = +i.value;
+  renderDesign();
+});
+document.addEventListener('keydown', e => {
+  const q = selected(), d = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] }[e.key];
+  if (!q || !d || state.view !== 'design' || /INPUT|SELECT|TEXTAREA/.test(document.activeElement.tagName)) return;
+  const s = e.shiftKey ? 0.5 : CONFIG.snap;
+  q.x = fmt(q.x + d[0] * s); q.y = fmt(q.y + d[1] * s);
+  syncFields(); renderDesign(); e.preventDefault();
+});
+
+function syncAlignUi() {
+  $('#snapPorts').checked = state.snapPorts;
+  $('#snapLine').checked = state.snapLine; $('#snapLine').disabled = !state.line;
+  $('#drawLine').classList.toggle('on', state.drawing);
+  $('#lineAll').disabled = $('#clearLine').disabled = !state.line;
+}
+$('#snapPorts').onchange = e => { state.snapPorts = e.target.checked; };
+$('#snapLine').onchange = e => { state.snapLine = e.target.checked; };
+$('#drawLine').onclick = () => {
+  state.drawing = !state.drawing;
+  if (state.drawing) { setView('design'); toast('Drag on the plate to draw the line.'); } else toast('');
+  syncAlignUi();
+};
+$('#clearLine').onclick = () => { state.line = null; state.snapLine = false; syncAlignUi(); renderDesign(); };
+$('#lineAll').onclick = () => { state.cutouts.forEach(q => moveCenterTo(q, projectOnLine(center(q)))); syncFields(); renderDesign(); };
+$('#rowAll').onclick = () => {
+  const s = selected(); if (!s) return toast('Select a port first.');
+  const cy = center(s)[1];
+  state.cutouts.forEach(q => moveCenterTo(q, [center(q)[0], cy]));
+  syncFields(); renderDesign();
+};
+const layoutJson = () => JSON.stringify({ plate: state.plate, cutouts: state.cutouts, line: state.line });
+$('#copyJson').onclick = () => {
+  const t = layoutJson(); $('#io').value = t; $('#io').select();
+  (navigator.clipboard ? navigator.clipboard.writeText(t) : Promise.reject()).then(() => toast('Layout JSON copied.'), () => toast('Select the text below and copy it.'));
+};
+$('#loadJson').onclick = () => {
+  try {
+    const j = JSON.parse($('#io').value);
+    state.plate = { ...CONFIG.plate, ...j.plate }; state.cutouts = j.cutouts || []; state.line = j.line || null;
+    state.nextId = Math.max(0, ...state.cutouts.map(c => c.id)) + 1; state.sel = null;
+    syncAlignUi(); syncFields(); renderDesign(); toast('Layout loaded.');
+  } catch (e) { toast('Could not read that JSON.'); }
+};
+$('#measure').onclick = () => {
+  const m = state.measure;
+  m.on = !m.on; m.a = m.b = null; state.drawing = false;
+  $('#measure').classList.toggle('on', m.on); syncAlignUi();
+  setView('design');
+};
+function applyLang() { // translate every static text node (originals are remembered in node.__en)
+  const w = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, {
+    acceptNode: n => /^(SCRIPT|STYLE|TEXTAREA)$/.test(n.parentNode.tagName) || !n.nodeValue.trim() ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT,
+  });
+  for (let n; (n = w.nextNode());) {
+    if (n.__en === undefined) n.__en = n.nodeValue;
+    const lead = n.__en.match(/^\s*/)[0], trail = n.__en.match(/\s*$/)[0];
+    n.nodeValue = lead + t(n.__en.trim()) + trail;
+  }
+}
+function setLang() { // rebuild everything that is generated by JS, then translate the static text
+  document.documentElement.lang = state.lang; document.title = t('I/O Shield Designer');
+  const cur = $('#preset').value;
+  $('#preset').innerHTML = Object.keys(PRESETS).map(n => `<option value="${n}">${t(n)}</option>`).join('');
+  if (cur) $('#preset').value = cur;
+  buildFields($('#plateFields'), PLATE_FIELDS, 'plate'); buildFields($('#fields'), CUT_FIELDS, 'cut');
+  $('#io').placeholder = t('Layout JSON or SVG source appears here');
+  applyLang();
+  $('#lang').textContent = state.lang === 'tr' ? 'EN' : 'TR';
+  syncFields(); syncAlignUi(); render(); toast('');
+}
+$('#lang').onclick = () => { state.lang = state.lang === 'tr' ? 'en' : 'tr'; setLang(); };
+$('#tabAlign').onclick = () => setView('align');
+$('#tabDesign').onclick = () => setView('design');
+$('#opacity').oninput = e => { state.opacity = +e.target.value; $('#opOut').textContent = Math.round(state.opacity * 100) + '%'; renderDesign(); };
+$('#mirror').onchange = e => { state.mirror = e.target.checked; setView('design'); };
+$('#flipV').onchange = e => { state.flipV = e.target.checked; setView('design'); };
+$('#rot').onclick = () => { state.rot = (state.rot + 1) % 4; setView('design'); };
+$('#zoom').oninput = e => zoomAt(+e.target.value, state.cam.cx, state.cam.cy);
+$('#fit').onclick = () => { state.cam.z = 1; renderAlign(); };
+document.querySelectorAll('[data-c]').forEach(b => b.onclick = () => { // jump to a corner at 4x or more
+  if (!state.photo) return;
+  const p = state.quad[+b.dataset.c];
+  state.cam.cx = p[0]; state.cam.cy = p[1]; state.cam.z = Math.max(state.cam.z, 4);
+  renderAlign();
+});
+$('#alignSvg').addEventListener('wheel', e => { // wheel zoom around the pointer
+  if (!state.photo) return;
+  e.preventDefault();
+  const p = svgPoint($('#alignSvg'), e);
+  zoomAt(Math.min(10, Math.max(1, state.cam.z * (e.deltaY < 0 ? 1.25 : 0.8))), p.x, p.y);
+}, { passive: false });
+$('#add').onclick = () => {
+  const name = $('#preset').value, p = PRESETS[name], { w, h } = state.plate;
+  state.cutouts.push({ id: state.nextId++, name, x: fmt((w - p.w) / 2), y: fmt((h - p.h) / 2), w: p.w, h: p.h, r: p.r });
+  setView('design'); select(state.nextId - 1);
+};
+$('#dup').onclick = () => {
+  const q = selected(); if (!q) return;
+  state.cutouts.push({ ...q, id: state.nextId++, x: fmt(q.x + q.w + 1.5) });
+  select(state.nextId - 1);
+};
+$('#del').onclick = () => { state.cutouts = state.cutouts.filter(c => c.id !== state.sel); select(null); };
+const exportStl = zip => { // zip = true wraps the STL in a .zip (the in-app save dialog accepts zip but not .stl)
+  if (!state.cutouts.length) return toast('Add at least one port first.');
+  toast('Building STL...');
+  setTimeout(() => {
+    const stl = buildStl();
+    zip ? saveFile('io-shield-stl.zip', zipStore('io-shield.stl', stl)) : saveFile('io-shield.stl', stl);
+  }, 20);
+};
+$('#stl').onclick = () => exportStl(false);
+$('#stlZip').onclick = () => exportStl(true);
+$('#svg').onclick = () => saveFile('io-shield.svg', buildSvg(), buildSvg());
+
+$('#file').onchange = e => { // load, downscale, store as data URL
+  const f = e.target.files[0]; if (!f) return;
+  const r = new FileReader();
+  r.onload = () => {
+    const im = new Image();
+    im.onload = () => {
+      const k = Math.min(1, CONFIG.maxPhoto / Math.max(im.naturalWidth, im.naturalHeight));
+      const c = document.createElement('canvas');
+      c.width = Math.round(im.naturalWidth * k); c.height = Math.round(im.naturalHeight * k);
+      c.getContext('2d').drawImage(im, 0, 0, c.width, c.height);
+      const src = c.toDataURL('image/jpeg', 0.9), i = CONFIG.quadInset;
+      state.photo = { src, w: c.width, h: c.height };
+      state.cam = { z: 1, cx: c.width / 2, cy: c.height / 2 };
+      state.quad = [[i, i], [1 - i, i], [1 - i, 1 - i], [i, 1 - i]].map(([a, b]) => [Math.round(a * c.width), Math.round(b * c.height)]);
+      for (const el of [$('#alignImg')]) { el.setAttribute('href', src); el.setAttribute('width', c.width); el.setAttribute('height', c.height); }
+      $('#photo').src = src;
+      setView('align');
+    };
+    im.src = r.result;
+  };
+  r.readAsDataURL(f);
+};
+new ResizeObserver(() => render()).observe(document.body);
+
+/* 8 INIT */
+$('#preset').innerHTML = Object.keys(PRESETS).map(n => `<option>${n}</option>`).join('');
+buildFields($('#plateFields'), PLATE_FIELDS, 'plate');
+buildFields($('#fields'), CUT_FIELDS, 'cut');
+$('#opacity').value = state.opacity; $('#opOut').textContent = Math.round(state.opacity * 100) + '%';
+setLang(); setView('align');
+</script>
+</body>
+</html>
